@@ -1,0 +1,28 @@
+# Secrets
+.env
+
+# Python
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+.pytest_cache/
+.ruff_cache/
+*.egg-info/
+
+# Build artifacts
+lambda.zip
+build/
+package/
+
+# Terraform
+terraform/.terraform/
+terraform/*.tfstate
+terraform/*.tfstate.*
+terraform/.terraform.lock.hcl
+terraform/*.tfvars
+
+# OS / editor
+.DS_Store
+.idea/
+.vscode/
