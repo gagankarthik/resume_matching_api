@@ -11,7 +11,6 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
-
 # ── Structured resume (subset of the extraction engine output) ──────────────
 
 class ResumeAnalysis(BaseModel):

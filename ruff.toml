@@ -1,0 +1,13 @@
+# Pinned lint configuration so `ruff check` is deterministic across ruff
+# releases (0.16 widened the default rule set, which broke CI). We select the
+# classic stable rules plus import sorting; opinionated rules (RUF/B/S) are
+# opt-in, not implicit.
+target-version = "py311"
+line-length = 120
+
+[lint]
+select = ["E4", "E7", "E9", "F", "I"]
+
+[lint.per-file-ignores]
+# Tests intentionally set sys.path before importing the package under test.
+"tests/*" = ["E402"]

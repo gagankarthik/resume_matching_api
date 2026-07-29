@@ -22,7 +22,8 @@ jobs:
         with:
           python-version: ${{ env.PYTHON_VERSION }}
           cache: pip
-      - run: pip install ruff
+      # Pinned so lint is reproducible; rules are pinned in ruff.toml.
+      - run: pip install ruff==0.16.0
       - run: ruff check .
 
   # ── Build + Deploy (main only) ────────────────────────────────────────────────
