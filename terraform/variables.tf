@@ -3,6 +3,11 @@ variable "region" {
   default = "us-east-2"
 }
 
+variable "environment" {
+  type    = string
+  default = "production"
+}
+
 # ── OpenAI ────────────────────────────────────────────────────────────────────
 variable "openai_api_key" {
   type      = string
@@ -73,4 +78,45 @@ variable "api_key" {
 variable "resume_parser_url" {
   type        = string
   description = "Base URL of the existing Resume Extraction Engine Function URL (no trailing slash)."
+}
+
+# ── Lambda tuning ─────────────────────────────────────────────────────────────
+variable "lambda_memory_mb" {
+  type    = number
+  default = 1024
+}
+
+variable "lambda_reserved_concurrency" {
+  type        = number
+  default     = -1
+  description = "-1 = unreserved. Set a positive cap to bound concurrency (protects OpenAI rate limits / cost)."
+}
+
+variable "enable_xray" {
+  type        = bool
+  default     = false
+  description = "Enable AWS X-Ray active tracing on the Lambda."
+}
+
+# ── Ops ───────────────────────────────────────────────────────────────────────
+variable "ddb_deletion_protection" {
+  type        = bool
+  default     = true
+  description = "Block accidental deletion of the vectors table. Set false in throwaway/dev stacks."
+}
+
+variable "allowed_origins" {
+  type        = list(string)
+  default     = ["*"]
+  description = "Function URL CORS origins. Server-to-server calls ignore CORS; tighten if browsers ever call directly."
+}
+
+variable "log_retention_days" {
+  type    = number
+  default = 14
+}
+
+variable "log_level" {
+  type    = string
+  default = "INFO"
 }

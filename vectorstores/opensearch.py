@@ -9,7 +9,6 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import Any
 
 from config import get_settings
 from vectorstores.base import QueryHit, StoredResume, VectorStore

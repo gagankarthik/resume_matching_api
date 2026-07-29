@@ -119,11 +119,17 @@ pytest tests/ -v
 Same shape as the extraction engine: a zip on S3, a Lambda behind a Function URL,
 deployed by Terraform via GitHub Actions.
 
-**One-time:**
+**First-time setup (in order):**
 ```bash
-aws s3api create-bucket --bucket resume-matching-tfstate \
-  --region us-east-2 --create-bucket-configuration LocationConstraint=us-east-2
+# 1. See what already exists in the account (read-only, creates nothing):
+bash scripts/preflight.sh
+
+# 2. Create the Terraform state bucket (the one resource apply can't create itself).
+#    Idempotent + production-hardened (versioning, encryption, TLS-only, no public):
+bash terraform/bootstrap.sh
 ```
+Everything else — Lambda, DynamoDB, IAM, Function URL, log group (and OpenSearch
+in large mode) — is created by `terraform apply` (via CI on push to `main`).
 
 **GitHub secrets** (Settings → Secrets and variables → Actions):
 - `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`

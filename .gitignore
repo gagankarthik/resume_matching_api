@@ -19,8 +19,9 @@ package/
 terraform/.terraform/
 terraform/*.tfstate
 terraform/*.tfstate.*
-terraform/.terraform.lock.hcl
 terraform/*.tfvars
+# NOTE: terraform/.terraform.lock.hcl IS committed on purpose (pins provider
+# versions for reproducible builds) — do not add it here.
 
 # OS / editor
 .DS_Store

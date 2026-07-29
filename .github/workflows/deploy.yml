@@ -70,6 +70,12 @@ jobs:
           aws-secret-access-key: ${{ secrets.AWS_SECRET_ACCESS_KEY }}
           aws-region: ${{ env.AWS_REGION }}
 
+      # One-time, idempotent: create the Terraform remote-state bucket if it's
+      # missing (the S3 backend cannot create its own bucket). Hardened +
+      # safe to run on every deploy.
+      - name: Bootstrap Terraform state bucket
+        run: bash bootstrap.sh
+
       - uses: hashicorp/setup-terraform@v3
         with:
           terraform_version: ${{ env.TF_VERSION }}
@@ -83,9 +89,6 @@ jobs:
           TF_VAR_openai_api_key:    ${{ secrets.OPENAI_API_KEY }}
           TF_VAR_api_key:           ${{ secrets.MATCH_API_KEY }}
           TF_VAR_resume_parser_url: ${{ secrets.RESUME_PARSER_URL }}
-          # Optional overrides (defaults exist in variables.tf):
-          TF_VAR_use_opensearch:    ${{ vars.USE_OPENSEARCH }}
-          TF_VAR_openai_model:      ${{ vars.OPENAI_MODEL }}
 
       - name: Print Function URL
         run: terraform output function_url
