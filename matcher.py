@@ -83,14 +83,37 @@ async def delete_resume(resume_id: str) -> bool:
     return await get_store().delete(resume_id)
 
 
+async def already_indexed(resume_id: str) -> bool:
+    return await get_store().exists(resume_id)
+
+
+# ── job resolution (two input types) ────────────────────────────────────────
+
+async def _resolve_job(job: JobInput | None, raw_text: str | None) -> dict:
+    """Accept either a structured job (integration) or a raw pasted JD blob
+    (copy-paste). For pasted text we run one gpt-4.1-mini pass to structure it;
+    any explicit structured fields win and the text fills the gaps."""
+    job_dict = job.model_dump() if job is not None else {}
+    if raw_text and raw_text.strip():
+        parsed = await llm.parse_job(raw_text)
+        for key, val in parsed.items():
+            if not job_dict.get(key):
+                job_dict[key] = val
+        if not job_dict.get("description"):
+            job_dict["description"] = raw_text.strip()
+    return job_dict
+
+
 # ── match: job -> ranked candidates ─────────────────────────────────────────
 
-async def match_job(job: JobInput, *, top_k: int | None = None, pool: int | None = None) -> list[Candidate]:
+async def match_job(
+    job: JobInput | None, raw_text: str | None = None, *, top_k: int | None = None, pool: int | None = None
+) -> list[Candidate]:
     settings = get_settings()
     top_k = top_k or settings.rerank_top
     pool = pool or settings.candidate_pool
 
-    job_dict = job.model_dump()
+    job_dict = await _resolve_job(job, raw_text)
     job_text = tb.build_job_text(job_dict)
     job_summary = tb.build_job_summary(job_dict)
     job_skill_list = tb.job_skills(job_dict)
@@ -151,7 +174,7 @@ async def match_job(job: JobInput, *, top_k: int | None = None, pool: int | None
 # ── score: one resume vs a job ──────────────────────────────────────────────
 
 async def score_one(req: ScoreRequest) -> ScoreResponse:
-    job_dict = req.job.model_dump()
+    job_dict = await _resolve_job(req.job, req.job_text)
     job_summary = tb.build_job_summary(job_dict)
     job_skill_list = tb.job_skills(job_dict)
 

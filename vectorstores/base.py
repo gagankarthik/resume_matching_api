@@ -49,3 +49,8 @@ class VectorStore(ABC):
     @abstractmethod
     async def delete(self, resume_id: str) -> bool:
         """Remove a resume. Returns True if it existed."""
+
+    async def exists(self, resume_id: str) -> bool:
+        """Cheap presence check (used for idempotent ingest). Backends may
+        override with a projection/count that avoids fetching the vector."""
+        return (await self.get(resume_id)) is not None

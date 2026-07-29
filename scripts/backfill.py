@@ -81,10 +81,15 @@ async def ingest_one(
                 headers={"X-API-Key": api_key},
             )
             if resp.status_code >= 400:
-                return key, False, f"{resp.status_code} {resp.text[:200]}"
-            return key, True, "ok"
+                return key, "failed", f"{resp.status_code} {resp.text[:200]}"
+            skipped = False
+            try:
+                skipped = bool(resp.json().get("skipped"))
+            except Exception:  # noqa: BLE001
+                pass
+            return key, ("skipped" if skipped else "indexed"), "ok"
         except Exception as exc:  # noqa: BLE001
-            return key, False, str(exc)
+            return key, "failed", str(exc)
 
 
 async def main_async(args: argparse.Namespace) -> int:
@@ -98,23 +103,27 @@ async def main_async(args: argparse.Namespace) -> int:
     sem = asyncio.Semaphore(args.concurrency)
     # /ingest parses (30–90s) then embeds — allow a long timeout per file.
     timeout = httpx.Timeout(180.0)
-    ok = 0
-    fail = 0
+    indexed = skipped = fail = 0
     async with httpx.AsyncClient(timeout=timeout) as client:
         tasks = [
             ingest_one(client, s3, args.bucket, args.api_url, args.api_key, obj, sem)
             for obj in objects
         ]
         for coro in asyncio.as_completed(tasks):
-            key, success, detail = await coro
-            if success:
-                ok += 1
-                print(f"  ✓ {key}")
+            key, status, detail = await coro
+            if status == "indexed":
+                indexed += 1
+                print(f"  ✓ indexed  {key}")
+            elif status == "skipped":
+                skipped += 1
+                print(f"  · skipped  {key} (already indexed)")
             else:
                 fail += 1
-                print(f"  ✗ {key} — {detail}")
+                print(f"  ✗ failed   {key} — {detail}")
 
-    print(f"\nDone. {ok} indexed, {fail} failed.")
+    print(f"\nDone. {indexed} indexed, {skipped} already-indexed, {fail} failed.")
+    if fail:
+        print("Re-run to retry failures — indexed/skipped resumes won't be re-parsed.")
     return 0 if fail == 0 else 1
 
 

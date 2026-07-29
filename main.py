@@ -102,9 +102,17 @@ async def ingest(
     resume_id: str | None = Query(default=None, description="Stable id; defaults to the filename"),
     candidate_name: str | None = Query(default=None),
     source: str | None = Query(default="bank"),
+    force: bool = Query(default=False, description="Re-index even if already present (default skips = idempotent)"),
 ):
     if not settings.parser_url:
         raise HTTPException(status_code=503, detail="RESUME_PARSER_URL is not configured; /ingest is unavailable.")
+
+    rid = resume_id or (file.filename or "resume")
+
+    # Idempotency: skip BEFORE the expensive parse if this resume is already
+    # indexed (so a 400-resume backfill can re-run cheaply / resume after a crash).
+    if not force and await matcher.already_indexed(rid):
+        return EmbedResponse(resume_id=rid, dim=0, stored=False, skipped=True)
 
     file_bytes = await file.read()
     if not file_bytes:
@@ -119,7 +127,6 @@ async def ingest(
         file.content_type or "application/octet-stream",
     )
     # 2. Embed + store.
-    rid = resume_id or (file.filename or "resume")
     try:
         return await matcher.embed_and_store_analysis(
             resume_id=rid,
@@ -134,8 +141,10 @@ async def ingest(
 
 @app.post("/match", response_model=MatchResponse, dependencies=[Depends(require_api_key)])
 async def match(req: MatchRequest):
+    if req.job is None and not (req.job_text and req.job_text.strip()):
+        raise HTTPException(status_code=400, detail="Provide a `job` object or `job_text`.")
     try:
-        candidates = await matcher.match_job(req.job, top_k=req.top_k, pool=req.pool)
+        candidates = await matcher.match_job(req.job, req.job_text, top_k=req.top_k, pool=req.pool)
     except Exception as exc:  # noqa: BLE001
         logger.exception("match failed")
         raise HTTPException(status_code=500, detail=f"Match failed: {exc}") from exc
@@ -144,6 +153,8 @@ async def match(req: MatchRequest):
 
 @app.post("/score", response_model=ScoreResponse, dependencies=[Depends(require_api_key)])
 async def score(req: ScoreRequest):
+    if req.job is None and not (req.job_text and req.job_text.strip()):
+        raise HTTPException(status_code=400, detail="Provide a `job` object or `job_text`.")
     if req.resume_id is None and req.analysis is None and not (req.text and req.text.strip()):
         raise HTTPException(status_code=400, detail="Provide `resume_id`, `analysis`, or `text`.")
     try:
@@ -153,6 +164,11 @@ async def score(req: ScoreRequest):
     except Exception as exc:  # noqa: BLE001
         logger.exception("score failed")
         raise HTTPException(status_code=500, detail=f"Score failed: {exc}") from exc
+
+
+@app.get("/vectors/{resume_id}/exists", dependencies=[Depends(require_api_key)])
+async def vector_exists(resume_id: str):
+    return {"resume_id": resume_id, "exists": await matcher.already_indexed(resume_id)}
 
 
 @app.delete("/vectors/{resume_id}", dependencies=[Depends(require_api_key)])

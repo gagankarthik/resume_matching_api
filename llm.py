@@ -153,6 +153,42 @@ async def rerank(job_summary: str, job_skill_list: list[str], candidates: list[d
     return out
 
 
+_JOB_PARSE_SYSTEM = (
+    "You extract a structured job posting from raw pasted text (which may be messy "
+    "copy-paste from a job board or email). Return STRICT JSON only. Do not invent "
+    "requirements that aren't in the text."
+)
+
+
+async def parse_job(text: str) -> dict[str, Any]:
+    """Turn a raw pasted job description into structured fields so it matches as
+    well as an integration payload does."""
+    user = (
+        f"=== JOB POSTING ===\n{text[:8000]}\n\n"
+        "Return JSON with:\n"
+        '  "title": the role title (string),\n'
+        '  "seniority": e.g. "Junior"|"Mid"|"Senior"|"Lead"|null,\n'
+        '  "employment_type": e.g. "Full-time"|"Contract"|null,\n'
+        '  "location": string|null,\n'
+        '  "skills": required/preferred skills as a list of short strings,\n'
+        '  "requirements": list of requirement lines,\n'
+        '  "responsibilities": list of responsibility lines.\n'
+        "Use null/empty when the text doesn't say."
+    )
+    data = await _chat_json(_JOB_PARSE_SYSTEM, user, max_tokens=1500)
+    if not isinstance(data, dict):
+        data = {}
+    return {
+        "title": (str(data["title"]).strip() if data.get("title") else None),
+        "seniority": (str(data["seniority"]).strip() if data.get("seniority") else None),
+        "employment_type": (str(data["employment_type"]).strip() if data.get("employment_type") else None),
+        "location": (str(data["location"]).strip() if data.get("location") else None),
+        "skills": _str_list(data.get("skills"), 40),
+        "requirements": _str_list(data.get("requirements"), 40),
+        "responsibilities": _str_list(data.get("responsibilities"), 40),
+    }
+
+
 _SCORE_SYSTEM = (
     "You are an expert technical recruiter. Judge whether ONE candidate qualifies "
     "for ONE job. Be strict and evidence-based: only credit skills/experience "

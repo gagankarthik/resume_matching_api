@@ -79,6 +79,15 @@ class DynamoVectorStore(VectorStore):
         self._invalidate()
         return existing is not None
 
+    async def exists(self, resume_id: str) -> bool:
+        # Projection to just the key — avoids reading the ~6 KB vector.
+        resp = await asyncio.to_thread(
+            self._get_table().get_item,
+            Key={"resumeId": resume_id},
+            ProjectionExpression="resumeId",
+        )
+        return "Item" in resp
+
     async def get(self, resume_id: str) -> StoredResume | None:
         resp = await asyncio.to_thread(self._get_table().get_item, Key={"resumeId": resume_id})
         item = resp.get("Item")

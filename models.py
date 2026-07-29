@@ -59,12 +59,17 @@ class EmbedResponse(BaseModel):
     resume_id: str
     dim: int
     stored: bool
+    skipped: bool = Field(False, description="True if it was already indexed and skipped (idempotent ingest)")
 
 
 # ── /match ──────────────────────────────────────────────────────────────────
 
 class MatchRequest(BaseModel):
-    job: JobInput
+    # Provide EITHER a structured `job` (app-to-app integration) OR a raw pasted
+    # `job_text` (copy-paste). If both are given, structured fields win and the
+    # text fills the gaps.
+    job: JobInput | None = None
+    job_text: str | None = Field(None, description="Raw pasted job description; structured with an LLM pass")
     top_k: int | None = Field(None, description="How many ranked candidates to return (defaults to server config)")
     pool: int | None = Field(None, description="How many nearest neighbours to shortlist before re-ranking")
 
@@ -90,7 +95,8 @@ class MatchResponse(BaseModel):
 # ── /score (single resume vs a job) ─────────────────────────────────────────
 
 class ScoreRequest(BaseModel):
-    job: JobInput
+    job: JobInput | None = None
+    job_text: str | None = Field(None, description="Raw pasted job description (alternative to structured `job`)")
     resume_id: str | None = Field(None, description="Use a stored resume by id …")
     analysis: ResumeAnalysis | None = Field(None, description="… or pass the structured resume inline")
     text: str | None = Field(None, description="… or raw resume text")
