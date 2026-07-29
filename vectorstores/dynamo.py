@@ -90,27 +90,14 @@ class DynamoVectorStore(VectorStore):
 
     async def exists_many(self, resume_ids: list[str]) -> dict[str, bool]:
         ids = [r for r in dict.fromkeys(resume_ids) if r]  # dedupe, keep order
-        result = {r: False for r in ids}
         if not ids:
-            return result
-
-        def _batch() -> None:
-            import boto3
-
-            client = boto3.client("dynamodb", region_name=self.settings.aws_region)
-            table = self.settings.ddb_table
-            # BatchGetItem allows max 100 keys per call.
-            for i in range(0, len(ids), 100):
-                chunk = ids[i : i + 100]
-                request = {table: {"Keys": [{"resumeId": {"S": r}} for r in chunk], "ProjectionExpression": "resumeId"}}
-                while request:
-                    resp = client.batch_get_item(RequestItems=request)
-                    for item in resp.get("Responses", {}).get(table, []):
-                        result[item["resumeId"]["S"]] = True
-                    request = resp.get("UnprocessedKeys") or None
-
-        await asyncio.to_thread(_batch)
-        return result
+            return {}
+        # Reuse the cached table load (a single Scan, already permitted + cached)
+        # rather than BatchGetItem — efficient for the whole bank in one shot, and
+        # membership is exact against every stored id.
+        stored_ids, _matrix, _meta = await self._load()
+        present = set(stored_ids)
+        return {r: (r in present) for r in ids}
 
     async def get(self, resume_id: str) -> StoredResume | None:
         resp = await asyncio.to_thread(self._get_table().get_item, Key={"resumeId": resume_id})
