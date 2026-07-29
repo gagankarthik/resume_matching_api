@@ -54,3 +54,11 @@ class VectorStore(ABC):
         """Cheap presence check (used for idempotent ingest). Backends may
         override with a projection/count that avoids fetching the vector."""
         return (await self.get(resume_id)) is not None
+
+    async def exists_many(self, resume_ids: list[str]) -> dict[str, bool]:
+        """Batch presence check. Default loops; backends may override with a
+        single batched read."""
+        out: dict[str, bool] = {}
+        for rid in resume_ids:
+            out[rid] = await self.exists(rid)
+        return out

@@ -62,6 +62,16 @@ class EmbedResponse(BaseModel):
     skipped: bool = Field(False, description="True if it was already indexed and skipped (idempotent ingest)")
 
 
+# ── /vectors/exists (batch) ──────────────────────────────────────────────────
+
+class ExistsRequest(BaseModel):
+    resume_ids: list[str] = Field(..., description="Resume ids to check (ids may contain slashes, hence a POST body)")
+
+
+class ExistsResponse(BaseModel):
+    indexed: dict[str, bool]
+
+
 # ── /match ──────────────────────────────────────────────────────────────────
 
 class MatchRequest(BaseModel):

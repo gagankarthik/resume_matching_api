@@ -30,6 +30,8 @@ from config import get_settings
 from models import (
     EmbedRequest,
     EmbedResponse,
+    ExistsRequest,
+    ExistsResponse,
     MatchRequest,
     MatchResponse,
     ScoreRequest,
@@ -169,6 +171,12 @@ async def score(req: ScoreRequest):
 @app.get("/vectors/{resume_id}/exists", dependencies=[Depends(require_api_key)])
 async def vector_exists(resume_id: str):
     return {"resume_id": resume_id, "exists": await matcher.already_indexed(resume_id)}
+
+
+@app.post("/vectors/exists", response_model=ExistsResponse, dependencies=[Depends(require_api_key)])
+async def vectors_exist(req: ExistsRequest):
+    # Batch check — ids in the body so slashes (S3 keys) are safe.
+    return ExistsResponse(indexed=await matcher.which_indexed(req.resume_ids))
 
 
 @app.delete("/vectors/{resume_id}", dependencies=[Depends(require_api_key)])

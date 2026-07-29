@@ -87,6 +87,10 @@ async def already_indexed(resume_id: str) -> bool:
     return await get_store().exists(resume_id)
 
 
+async def which_indexed(resume_ids: list[str]) -> dict[str, bool]:
+    return await get_store().exists_many(resume_ids)
+
+
 # ── job resolution (two input types) ────────────────────────────────────────
 
 async def _resolve_job(job: JobInput | None, raw_text: str | None) -> dict:
