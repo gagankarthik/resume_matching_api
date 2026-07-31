@@ -66,6 +66,7 @@ class OpenSearchVectorStore(VectorStore):
                     "summary": {"type": "text"},
                     "skills": {"type": "keyword"},
                     "source": {"type": "keyword"},
+                    "owner": {"type": "keyword"},
                 }
             },
         }
@@ -84,6 +85,7 @@ class OpenSearchVectorStore(VectorStore):
             "summary": record.summary or "",
             "skills": record.skills or [],
             "source": record.source or "",
+            "owner": record.owner or "",
         }
         await asyncio.to_thread(
             lambda: self._get_client().index(index=self.index, id=record.resume_id, body=body)
@@ -119,17 +121,37 @@ class OpenSearchVectorStore(VectorStore):
                 summary=src.get("summary") or "",
                 skills=list(src.get("skills") or []),
                 source=src.get("source") or None,
+                owner=src.get("owner") or None,
             )
 
         return await asyncio.to_thread(_get)
 
     # ── query ───────────────────────────────────────────────────────────────
-    async def query(self, vector: list[float], top_k: int) -> list[QueryHit]:
+    async def query(
+        self,
+        vector: list[float],
+        top_k: int,
+        *,
+        source: str | None = None,
+        owner: str | None = None,
+    ) -> list[QueryHit]:
         def _search() -> list[QueryHit]:
             client = self._get_client()
+            knn: dict = {"vector": vector, "k": top_k}
+            # Filtering inside the k-NN clause (faiss, OpenSearch 2.9+) keeps the
+            # search efficient and returns a full k from the scoped set, rather
+            # than filtering a global k afterwards and coming back short.
+            terms = []
+            if source:
+                terms.append({"term": {"source": source}})
+            if owner:
+                terms.append({"term": {"owner": owner}})
+            if terms:
+                knn["filter"] = {"bool": {"filter": terms}}
+
             body = {
                 "size": top_k,
-                "query": {"knn": {"vector": {"vector": vector, "k": top_k}}},
+                "query": {"knn": {"vector": knn}},
                 "_source": ["candidateName", "summary", "skills"],
             }
             resp = client.search(index=self.index, body=body)

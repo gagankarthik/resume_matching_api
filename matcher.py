@@ -38,6 +38,7 @@ async def embed_and_store(req: EmbedRequest) -> EmbedResponse:
             candidate_name=req.candidate_name,
             analysis=analysis,
             source=req.source or "application",
+            owner=req.owner,
         )
 
     # Raw-text path: embed the text directly, keep a truncated summary.
@@ -52,13 +53,19 @@ async def embed_and_store(req: EmbedRequest) -> EmbedResponse:
             summary=text[:1200],
             skills=[],
             source=req.source or "text",
+            owner=req.owner,
         )
     )
     return EmbedResponse(resume_id=req.resume_id, dim=len(vector), stored=True)
 
 
 async def embed_and_store_analysis(
-    *, resume_id: str, candidate_name: str | None, analysis: dict, source: str | None
+    *,
+    resume_id: str,
+    candidate_name: str | None,
+    analysis: dict,
+    source: str | None,
+    owner: str | None = None,
 ) -> EmbedResponse:
     text = tb.build_resume_text(analysis, candidate_name)
     summary = tb.build_resume_summary(analysis, candidate_name)
@@ -74,6 +81,7 @@ async def embed_and_store_analysis(
             summary=summary,
             skills=skills,
             source=source,
+            owner=owner,
         )
     )
     return EmbedResponse(resume_id=resume_id, dim=len(vector), stored=True)
@@ -111,7 +119,13 @@ async def _resolve_job(job: JobInput | None, raw_text: str | None) -> dict:
 # ── match: job -> ranked candidates ─────────────────────────────────────────
 
 async def match_job(
-    job: JobInput | None, raw_text: str | None = None, *, top_k: int | None = None, pool: int | None = None
+    job: JobInput | None,
+    raw_text: str | None = None,
+    *,
+    top_k: int | None = None,
+    pool: int | None = None,
+    source: str | None = None,
+    owner: str | None = None,
 ) -> list[Candidate]:
     settings = get_settings()
     top_k = top_k or settings.rerank_top
@@ -122,9 +136,9 @@ async def match_job(
     job_summary = tb.build_job_summary(job_dict)
     job_skill_list = tb.job_skills(job_dict)
 
-    # 1. Shortlist by semantic similarity.
+    # 1. Shortlist by semantic similarity, within the caller's scope.
     job_vec = await embedding.embed_text(job_text)
-    hits = await get_store().query(job_vec, pool)
+    hits = await get_store().query(job_vec, pool, source=source, owner=owner)
     if not hits:
         return []
 

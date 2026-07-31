@@ -89,6 +89,43 @@ def test_llm_parse_json_handles_fences():
     assert llm._parse_json('prefix {"a": 2} suffix') == {"a": 2}
 
 
+# ── Scoping: one table, several unrelated banks ─────────────────────────────
+
+IDS = ["a.pdf", "b.pdf", "resume-bank/old.docx"]
+META = {
+    "a.pdf": {"source": "truecopy", "owner": "user-1"},
+    "b.pdf": {"source": "truecopy", "owner": "user-2"},
+    "resume-bank/old.docx": {"source": "bank", "owner": ""},
+}
+
+
+def test_scope_mask_unscoped_sees_everything():
+    from vectorstores.base import scope_mask
+
+    assert scope_mask(IDS, META, None, None) == [True, True, True]
+
+
+def test_scope_mask_by_source_excludes_the_other_application():
+    from vectorstores.base import scope_mask
+
+    assert scope_mask(IDS, META, "truecopy", None) == [True, True, False]
+
+
+def test_scope_mask_by_owner_is_per_user():
+    from vectorstores.base import scope_mask
+
+    assert scope_mask(IDS, META, "truecopy", "user-1") == [True, False, False]
+
+
+def test_scope_mask_untagged_records_match_no_scope():
+    from vectorstores.base import scope_mask
+
+    # Anything stored before scoping existed carries neither tag, so a scoped
+    # query must not pick it up.
+    assert scope_mask(["x.pdf"], {"x.pdf": {}}, "truecopy", None) == [False]
+    assert scope_mask(["x.pdf"], {"x.pdf": {}}, None, "user-1") == [False]
+
+
 if __name__ == "__main__":
     import pytest
 

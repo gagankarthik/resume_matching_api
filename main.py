@@ -104,6 +104,7 @@ async def ingest(
     resume_id: str | None = Query(default=None, description="Stable id; defaults to the filename"),
     candidate_name: str | None = Query(default=None),
     source: str | None = Query(default="bank"),
+    owner: str | None = Query(default=None, description="Who this resume belongs to; scopes later /match calls"),
     force: bool = Query(default=False, description="Re-index even if already present (default skips = idempotent)"),
 ):
     if not settings.parser_url:
@@ -135,6 +136,7 @@ async def ingest(
             candidate_name=candidate_name,
             analysis=analysis,
             source=source,
+            owner=owner,
         )
     except Exception as exc:  # noqa: BLE001
         logger.exception("ingest store failed")
@@ -146,7 +148,14 @@ async def match(req: MatchRequest):
     if req.job is None and not (req.job_text and req.job_text.strip()):
         raise HTTPException(status_code=400, detail="Provide a `job` object or `job_text`.")
     try:
-        candidates = await matcher.match_job(req.job, req.job_text, top_k=req.top_k, pool=req.pool)
+        candidates = await matcher.match_job(
+            req.job,
+            req.job_text,
+            top_k=req.top_k,
+            pool=req.pool,
+            source=req.source,
+            owner=req.owner,
+        )
     except Exception as exc:  # noqa: BLE001
         logger.exception("match failed")
         raise HTTPException(status_code=500, detail=f"Match failed: {exc}") from exc

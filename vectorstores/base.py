@@ -7,17 +7,48 @@ from __future__ import annotations
 
 from abc import ABC, abstractmethod
 from dataclasses import dataclass, field
+from typing import Any
 
 
 @dataclass
 class StoredResume:
-    """One resume's record in the vector store."""
+    """One resume's record in the vector store.
+
+    `source` and `owner` are what keep unrelated banks apart in one table: an
+    application tags what it writes (`source`), and where it has a signed-in
+    user, who wrote it (`owner`). A scoped query then sees only its own
+    records. Anything stored before scoping existed carries neither tag, so it
+    matches no scoped query — the safe direction to fail."""
     resume_id: str
     vector: list[float]
     candidate_name: str | None = None
     summary: str = ""
     skills: list[str] = field(default_factory=list)
     source: str | None = None
+    owner: str | None = None
+
+
+def scope_mask(
+    ids: list[str],
+    meta: dict[str, dict[str, Any]],
+    source: str | None,
+    owner: str | None,
+) -> list[bool]:
+    """Which stored resumes a scoped query is allowed to see.
+
+    Lives here, in the dependency-free layer, so the rule that separates one
+    application's bank from another's can be read and tested on its own.
+    """
+    if not source and not owner:
+        return [True] * len(ids)
+    allowed: list[bool] = []
+    for rid in ids:
+        m = meta.get(rid) or {}
+        allowed.append(
+            (not source or (m.get("source") or "") == source)
+            and (not owner or (m.get("owner") or "") == owner)
+        )
+    return allowed
 
 
 @dataclass
@@ -39,8 +70,19 @@ class VectorStore(ABC):
         """Insert or replace a resume's vector + metadata."""
 
     @abstractmethod
-    async def query(self, vector: list[float], top_k: int) -> list[QueryHit]:
-        """Return the top_k nearest resumes by cosine similarity."""
+    async def query(
+        self,
+        vector: list[float],
+        top_k: int,
+        *,
+        source: str | None = None,
+        owner: str | None = None,
+    ) -> list[QueryHit]:
+        """Return the top_k nearest resumes by cosine similarity.
+
+        `source`/`owner` narrow the candidate set *before* the ranking is cut,
+        so a scoped caller gets its own top_k rather than whatever survives a
+        filter applied afterwards."""
 
     @abstractmethod
     async def get(self, resume_id: str) -> StoredResume | None:

@@ -17,7 +17,7 @@ from typing import Any
 import numpy as np
 
 from config import get_settings
-from vectorstores.base import QueryHit, StoredResume, VectorStore
+from vectorstores.base import QueryHit, StoredResume, VectorStore, scope_mask
 
 logger = logging.getLogger("matching.store.dynamo")
 
@@ -34,6 +34,8 @@ def _from_bytes(raw: Any) -> np.ndarray:
     # boto3 returns a Binary wrapper; unwrap to raw bytes.
     data = raw.value if hasattr(raw, "value") else bytes(raw)
     return np.frombuffer(data, dtype=np.float32)
+
+
 
 
 class DynamoVectorStore(VectorStore):
@@ -68,6 +70,7 @@ class DynamoVectorStore(VectorStore):
             "summary": record.summary or "",
             "skills": record.skills or [],
             "source": record.source or "",
+            "owner": record.owner or "",
             "updatedAt": _now_iso(),
         }
         await asyncio.to_thread(self._get_table().put_item, Item=item)
@@ -111,6 +114,7 @@ class DynamoVectorStore(VectorStore):
             summary=item.get("summary") or "",
             skills=list(item.get("skills") or []),
             source=item.get("source") or None,
+            owner=item.get("owner") or None,
         )
 
     # ── read-all (with cache) ───────────────────────────────────────────────
@@ -120,7 +124,9 @@ class DynamoVectorStore(VectorStore):
         vectors: list[np.ndarray] = []
         meta: dict[str, dict[str, Any]] = {}
         kwargs: dict[str, Any] = {
-            "ProjectionExpression": "resumeId, vec, candidateName, summary, skills",
+            # `source` and `owner` are DynamoDB reserved words, hence the aliases.
+            "ProjectionExpression": "resumeId, vec, candidateName, summary, skills, #src, #own",
+            "ExpressionAttributeNames": {"#src": "source", "#own": "owner"},
         }
         while True:
             resp = table.scan(**kwargs)
@@ -132,6 +138,8 @@ class DynamoVectorStore(VectorStore):
                     "candidate_name": item.get("candidateName") or None,
                     "summary": item.get("summary") or "",
                     "skills": list(item.get("skills") or []),
+                    "source": item.get("source") or "",
+                    "owner": item.get("owner") or "",
                 }
             lek = resp.get("LastEvaluatedKey")
             if not lek:
@@ -157,7 +165,14 @@ class DynamoVectorStore(VectorStore):
         return ids, matrix, meta
 
     # ── query ───────────────────────────────────────────────────────────────
-    async def query(self, vector: list[float], top_k: int) -> list[QueryHit]:
+    async def query(
+        self,
+        vector: list[float],
+        top_k: int,
+        *,
+        source: str | None = None,
+        owner: str | None = None,
+    ) -> list[QueryHit]:
         ids, matrix, meta = await self._load()
         if matrix.shape[0] == 0:
             return []
@@ -169,7 +184,17 @@ class DynamoVectorStore(VectorStore):
         q = q / qn
 
         sims = matrix @ q  # cosine similarity, since both sides are normalised
-        k = min(top_k, sims.shape[0])
+
+        # Scope first, rank second: a caller asking for its own resumes gets a
+        # full top_k of them, not the remainder of a global ranking.
+        allowed = np.asarray(scope_mask(ids, meta, source, owner), dtype=bool)
+        in_scope = int(allowed.sum())
+        if in_scope == 0:
+            return []
+        if in_scope < allowed.size:
+            sims = np.where(allowed, sims, -np.inf)
+
+        k = min(top_k, in_scope)
         # Top-k via argpartition, then sort just those.
         top_idx = np.argpartition(-sims, k - 1)[:k]
         top_idx = top_idx[np.argsort(-sims[top_idx])]

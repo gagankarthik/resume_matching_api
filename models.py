@@ -51,7 +51,8 @@ class EmbedRequest(BaseModel):
     candidate_name: str | None = None
     analysis: ResumeAnalysis | None = Field(None, description="Structured resume; provide this OR `text`")
     text: str | None = Field(None, description="Raw resume text, if no structured analysis is available")
-    source: str | None = Field(None, description="Optional tag: 'application' | 'bank' | …")
+    source: str | None = Field(None, description="Which application stored this: 'application' | 'bank' | 'truecopy' | …")
+    owner: str | None = Field(None, description="Who stored it (e.g. a user id). Scopes /match to one person's uploads.")
 
 
 class EmbedResponse(BaseModel):
@@ -82,6 +83,10 @@ class MatchRequest(BaseModel):
     job_text: str | None = Field(None, description="Raw pasted job description; structured with an LLM pass")
     top_k: int | None = Field(None, description="How many ranked candidates to return (defaults to server config)")
     pool: int | None = Field(None, description="How many nearest neighbours to shortlist before re-ranking")
+    # Scoping. One table can hold several unrelated banks; these say which one
+    # this job is being matched against. Both unset = the whole store.
+    source: str | None = Field(None, description="Only rank resumes stored with this source tag")
+    owner: str | None = Field(None, description="Only rank resumes stored with this owner")
 
 
 class Candidate(BaseModel):

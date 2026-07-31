@@ -65,6 +65,8 @@ async def ingest_one(
     api_key: str,
     obj: dict,
     sem: asyncio.Semaphore,
+    source: str = "bank",
+    owner: str | None = None,
 ) -> tuple[str, bool, str]:
     key = obj["key"]
     async with sem:
@@ -74,9 +76,12 @@ async def ingest_one(
             )
             file_name = key.rsplit("/", 1)[-1]
             files = {"file": (file_name, body, content_type_for(key))}
+            params = {"resume_id": key, "source": source}
+            if owner:
+                params["owner"] = owner
             resp = await client.post(
                 f"{api_url.rstrip('/')}/ingest",
-                params={"resume_id": key, "source": "bank"},
+                params=params,
                 files=files,
                 headers={"X-API-Key": api_key},
             )
@@ -106,7 +111,10 @@ async def main_async(args: argparse.Namespace) -> int:
     indexed = skipped = fail = 0
     async with httpx.AsyncClient(timeout=timeout) as client:
         tasks = [
-            ingest_one(client, s3, args.bucket, args.api_url, args.api_key, obj, sem)
+            ingest_one(
+                client, s3, args.bucket, args.api_url, args.api_key, obj, sem,
+                source=args.source, owner=args.owner,
+            )
             for obj in objects
         ]
         for coro in asyncio.as_completed(tasks):
@@ -133,6 +141,8 @@ def main() -> int:
     p.add_argument("--prefix", default="", help="S3 key prefix (e.g. 'resume-bank/')")
     p.add_argument("--api-url", default=os.getenv("RESUME_MATCH_API_URL", ""), help="Matching engine Function URL")
     p.add_argument("--api-key", default=os.getenv("MATCH_API_KEY", ""), help="Shared X-API-Key")
+    p.add_argument("--source", default="bank", help="Tag every ingested resume with this source (scopes /match)")
+    p.add_argument("--owner", default=None, help="Tag every ingested resume with this owner (scopes /match per user)")
     p.add_argument("--limit", type=int, default=None, help="Only process the first N files")
     p.add_argument("--concurrency", type=int, default=3, help="Parallel ingests (keep low — each triggers a slow parse)")
     args = p.parse_args()

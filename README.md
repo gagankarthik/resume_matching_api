@@ -44,7 +44,9 @@ Auth = an `X-API-Key` header matching the `API_KEY` env var.
     "responsibilities": ["Design services", "Mentor engineers"],
     "skills": ["Python", "AWS", "PostgreSQL"]
   },
-  "top_k": 10   // optional
+  "top_k": 10,          // optional
+  "source": "truecopy", // optional — only rank resumes stored with this tag
+  "owner": "user-123"   // optional — only rank one person's uploads
 }
 ```
 ```jsonc
@@ -87,8 +89,29 @@ Auth = an `X-API-Key` header matching the `API_KEY` env var.
 
 ```jsonc
 { "resume_id": "APP-1042", "candidate_name": "Jane Doe", "source": "application",
+  "owner": "user-123",   // optional — who uploaded it
   "analysis": { /* ResumeAnalysis from the extraction engine */ } }
 ```
+
+---
+
+## Several banks in one table
+
+`source` and `owner` are stored with each resume and accepted as filters on
+`/match`. That is what lets unrelated applications share one store: each tags
+what it writes, and matches against its own tag.
+
+| Scope on `/match` | What it ranks |
+|---|---|
+| *(neither)* | every resume in the store |
+| `source: "truecopy"` | only what that application uploaded |
+| `source: "truecopy"`, `owner: "user-123"` | only that user's uploads |
+
+The filter is applied **before** the shortlist is cut, so a scoped caller gets
+a full `top_k` of its own resumes rather than the leftovers of a global
+ranking. Resumes stored before scoping existed carry neither tag and so match
+no scoped query — to fold the old bank into a scope, re-run the backfill with
+`--source`, or `POST /embed` those ids again with the tag set.
 
 ---
 
