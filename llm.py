@@ -93,6 +93,14 @@ def _str_list(v: Any, limit: int = 25) -> list[str]:
     return out[:limit]
 
 
+# The model sometimes fills an empty skills list with a phrase instead of [].
+_NO_SKILL_RE = re.compile(r"^(none|n/?a|nil|nothing|-+|none (significant|identified|missing|noted)|no (major |significant )?(gaps?|missing skills?))\.?$", re.IGNORECASE)
+
+
+def _skill_list(v: Any, limit: int = 25) -> list[str]:
+    return [s for s in _str_list(v, limit) if not _NO_SKILL_RE.match(s)]
+
+
 _RERANK_SYSTEM = (
     "You are an expert technical recruiter. You are given ONE job and a list of "
     "candidate resume summaries. For EACH candidate, judge how well they fit the "
@@ -104,11 +112,35 @@ _RERANK_SYSTEM = (
 async def rerank(job_summary: str, job_skill_list: list[str], candidates: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
     """Score every shortlisted candidate against the job.
 
+    The shortlist is split into small batches scored concurrently. One call for
+    25 candidates spent ~20s generating ~4k tokens of JSON in series; five
+    calls of five finish in roughly the time of one. A batch that fails is
+    skipped, and the matcher falls back to similarity for its candidates.
+
     `candidates`: [{ "id", "name", "summary", "skills": [...] }]
     Returns: { id -> { fit_score, qualified, verdict, matched_skills, missing_skills, rationale } }
     """
     if not candidates:
         return {}
+    settings = get_settings()
+    size = max(1, settings.rerank_batch)
+    batches = [candidates[i : i + size] for i in range(0, len(candidates), size)]
+    gate = asyncio.Semaphore(max(1, settings.rerank_concurrency))
+
+    async def run(batch: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
+        async with gate:
+            return await _rerank_batch(job_summary, job_skill_list, batch)
+
+    out: dict[str, dict[str, Any]] = {}
+    for result in await asyncio.gather(*(run(b) for b in batches), return_exceptions=True):
+        if isinstance(result, BaseException):
+            logger.error("rerank batch failed, falling back to similarity: %s", result)
+            continue
+        out.update(result)
+    return out
+
+
+async def _rerank_batch(job_summary: str, job_skill_list: list[str], candidates: list[dict[str, Any]]) -> dict[str, dict[str, Any]]:
 
     job_block = job_summary
     if job_skill_list:
@@ -136,7 +168,8 @@ async def rerank(job_summary: str, job_skill_list: list[str], candidates: list[d
         'Respond as JSON: {"results": [ ... ]} — include EVERY candidate id exactly once.'
     )
 
-    data = await _chat_json(_RERANK_SYSTEM, user, max_tokens=4096)
+    # ~200 tokens per candidate verdict; bounded so a batch can't run long.
+    data = await _chat_json(_RERANK_SYSTEM, user, retries=2, max_tokens=300 * len(candidates) + 200)
     results = data.get("results") if isinstance(data, dict) else data
     out: dict[str, dict[str, Any]] = {}
     for r in results or []:
@@ -146,8 +179,8 @@ async def rerank(job_summary: str, job_skill_list: list[str], candidates: list[d
             "fit_score": _clamp_score(r.get("fit_score")),
             "qualified": bool(r.get("qualified")),
             "verdict": _norm_verdict(r.get("verdict")),
-            "matched_skills": _str_list(r.get("matched_skills")),
-            "missing_skills": _str_list(r.get("missing_skills")),
+            "matched_skills": _skill_list(r.get("matched_skills")),
+            "missing_skills": _skill_list(r.get("missing_skills")),
             "rationale": (str(r.get("rationale")).strip() or None) if r.get("rationale") else None,
         }
     return out
@@ -222,7 +255,7 @@ async def score_one(job_summary: str, job_skill_list: list[str], resume_summary:
         "fit_score": _clamp_score(r.get("fit_score")),
         "qualified": bool(r.get("qualified")),
         "verdict": _norm_verdict(r.get("verdict")),
-        "matched_skills": _str_list(r.get("matched_skills")),
-        "missing_skills": _str_list(r.get("missing_skills")),
+        "matched_skills": _skill_list(r.get("matched_skills")),
+        "missing_skills": _skill_list(r.get("missing_skills")),
         "rationale": (str(r.get("rationale")).strip() or None) if r.get("rationale") else None,
     }

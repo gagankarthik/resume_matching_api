@@ -84,9 +84,38 @@ def test_llm_normalisers():
     assert llm._str_list(["a", "", "b", None]) == ["a", "b"]
 
 
+def test_skill_lists_drop_placeholder_phrases():
+    assert llm._skill_list(["Python", "None significant", "N/A", "none", "No major gaps", "AWS"]) == ["Python", "AWS"]
+
+
 def test_llm_parse_json_handles_fences():
     assert llm._parse_json('```json\n{"a": 1}\n```') == {"a": 1}
     assert llm._parse_json('prefix {"a": 2} suffix') == {"a": 2}
+
+
+def test_rerank_batches_and_survives_a_failed_batch(monkeypatch):
+    import asyncio
+
+    calls: list[list[str]] = []
+
+    async def fake_batch(job_summary, job_skills, batch):
+        ids = [c["id"] for c in batch]
+        calls.append(ids)
+        if "c6" in ids:
+            raise RuntimeError("model hiccup")
+        return {i: {"fit_score": 80, "qualified": True, "verdict": "strong",
+                    "matched_skills": [], "missing_skills": [], "rationale": None} for i in ids}
+
+    monkeypatch.setattr(llm, "_rerank_batch", fake_batch)
+    from config import get_settings
+
+    monkeypatch.setattr(get_settings(), "rerank_batch", 5)
+    cands = [{"id": f"c{i}", "name": None, "summary": "", "skills": []} for i in range(12)]
+    out = asyncio.run(llm.rerank("job", [], cands))
+    # 12 candidates in batches of 5 -> 3 calls; the batch holding c6 failed.
+    assert sorted(len(c) for c in calls) == [2, 5, 5]
+    assert "c0" in out and "c11" in out
+    assert not any(f"c{i}" in out for i in range(5, 10))
 
 
 # ── Scoping: one table, several unrelated banks ─────────────────────────────

@@ -64,6 +64,10 @@ class Settings:
         self.candidate_pool: int = _int("MATCH_CANDIDATE_POOL", 25)
         # How many final ranked candidates to return from /match.
         self.rerank_top: int = _int("MATCH_RERANK_TOP", 10)
+        # The shortlist is re-ranked in batches of this size, this many at once.
+        # Measured on a 25-candidate pool: one call 18s; 3 × 9 in parallel ~5s.
+        self.rerank_batch: int = _int("MATCH_RERANK_BATCH", 3)
+        self.rerank_concurrency: int = _int("MATCH_RERANK_CONCURRENCY", 9)
         # Blend of semantic similarity vs LLM judgment in the final score.
         # final = sim_weight * cosine*100 + llm_weight * llm_fit_score
         self.sim_weight: float = _float("MATCH_SIM_WEIGHT", 0.35)

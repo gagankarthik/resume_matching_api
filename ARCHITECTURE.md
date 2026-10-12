@@ -51,6 +51,11 @@ job description
   (when it's parsed, or during a one-time backfill) and stored. Matching a job
   only embeds the *job* (one call), then does math against stored vectors.
 - **The LLM only sees the shortlist** (~25 candidates), never the whole bank.
+  The shortlist is scored in small batches **in parallel** (`MATCH_RERANK_BATCH`,
+  default 3, `MATCH_RERANK_CONCURRENCY`, default 9): one call for 25 candidates
+  spent ~18s generating JSON in series, parallel batches finish in ~5s. A batch
+  that fails falls back to similarity for its candidates instead of failing the
+  match.
   Cost per match is bounded and flat regardless of bank size.
 - **Same engine, both features.** `POST /match` runs the full pipeline for a
   job. `POST /score` skips the search and runs just the LLM-verdict step on one
@@ -179,7 +184,7 @@ never committed.
 |---|---|---|
 | `POST /embed` | 1 embedding call + 1 DynamoDB write | < 1 s |
 | `POST /ingest` | parse (30–90 s in the extraction Lambda) + embed + write | 30–90 s |
-| `POST /match` | 1 embedding call + vector search + 1 gpt-4.1-mini re-rank | 2–6 s |
+| `POST /match` | 1 embedding call + vector search + parallel gpt-4.1-mini re-rank batches | 5–10 s warm |
 | `POST /score` | 1 gpt-4.1-mini verdict | 1–3 s |
 
 The 300s Lambda timeout covers `/ingest`'s dependency on the slow parser; the
